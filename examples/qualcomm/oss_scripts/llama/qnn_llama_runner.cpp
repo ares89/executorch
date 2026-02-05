@@ -21,6 +21,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <gflags/gflags.h>
 #include <fstream>
+#include <iostream>
 #include <vector>
 
 DEFINE_string(decoder_model_version, "llama2", "The decoder model to execute.");
@@ -83,6 +84,11 @@ DEFINE_int32(
     0,
     "[Lookahead Decoding] Represents the maximum number of speculations or candidate n-grams that the algorithm considers in each step for verification. It balances the trade-off between computation efficiency and exploring more possibilities.");
 
+DEFINE_string(
+    raw_prompts_file,
+    "",
+    "Path to a file containing raw prompts, one per line. Each line is treated as a separate inference.");
+
 std::vector<std::string> CollectPrompts(int argc, char** argv) {
   // Collect all prompts from command line, example usage:
   // --prompt "prompt1" --prompt "prompt2" --prompt "prompt3"
@@ -91,6 +97,21 @@ std::vector<std::string> CollectPrompts(int argc, char** argv) {
     if (std::string(argv[i]) == "--prompt" && i + 1 < argc) {
       prompts.push_back(argv[i + 1]);
       i++; // Skip the next argument
+    }
+  }
+  return prompts;
+}
+
+std::vector<std::string> ReadPromptsFromFile(const std::string& path) {
+  std::vector<std::string> prompts;
+  std::ifstream fin(path);
+  if (!fin.is_open()) {
+    return prompts;
+  }
+  std::string line;
+  while (std::getline(fin, line)) {
+    if (!line.empty()) {
+      prompts.push_back(line);
     }
   }
   return prompts;
@@ -213,6 +234,9 @@ void start_runner(
   bool use_tokenized_prompt =
       gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default ? false
                                                                          : true;
+  bool use_raw_prompts =
+      gflags::GetCommandLineFlagInfoOrDie("raw_prompts_file").is_default ? false
+                                                                         : true;
   // create llama runner
   example::Runner<T> runner(
       std::move(module),
@@ -237,7 +261,7 @@ void start_runner(
     }
   };
   executorch::extension::llm::GenerationConfig config{
-      true,
+      false,
       -1,
       false,
       FLAGS_seq_len,
@@ -248,14 +272,43 @@ void start_runner(
     runner.generate_from_prompt_or_file(
         FLAGS_tokenized_prompt.c_str(), use_tokenized_prompt, config, callback);
   } else {
-    // generate tokens & store inference output
-    for (int i = 0; i < FLAGS_num_iters; i++) {
-      for (const auto& prompt : prompts) {
-        std::string formatted_prompt;
-        formatted_prompt = get_formatted_prompt(
+    if (use_raw_prompts) {
+      // If `prompts` was already populated (main may have read the file),
+      // prefer it. Otherwise read prompts from the provided file.
+      std::vector<std::string> file_prompts = prompts;
+      if (file_prompts.empty()) {
+        file_prompts = ReadPromptsFromFile(FLAGS_raw_prompts_file);
+      }
+      // generate tokens & store inference output from raw prompts
+      int infer_id = 0;
+      for (const auto& prompt : file_prompts) {
+        std::string formatted_prompt = get_formatted_prompt(
             prompt, FLAGS_system_prompt, decoder_model_version.get());
+        // collect result per inference
+        std::string result;
+        auto per_cb = [&](const std::string& piece) { result.append(piece); };
         runner.generate_from_prompt_or_file(
-            formatted_prompt.c_str(), use_tokenized_prompt, config, callback);
+            formatted_prompt.c_str(), false, config, per_cb);
+
+        // write three lines: id, prompt, result
+        fout << infer_id << std::endl;
+        fout << prompt << std::endl;
+        fout << result << std::endl;
+        infer_id++;
+
+        // reset runner state between independent inferences
+        runner.reset();
+      }
+    } else {
+      // generate tokens & store inference output
+      for (int i = 0; i < FLAGS_num_iters; i++) {
+        for (const auto& prompt : prompts) {
+          std::string formatted_prompt;
+          formatted_prompt = get_formatted_prompt(
+              prompt, FLAGS_system_prompt, decoder_model_version.get());
+          runner.generate_from_prompt_or_file(
+              formatted_prompt.c_str(), use_tokenized_prompt, config, callback);
+        }
       }
     }
   }
@@ -267,6 +320,15 @@ void start_runner(
 int main(int argc, char** argv) {
   std::vector<std::string> prompts = CollectPrompts(argc, argv);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+  // If raw prompts file provided, read prompts (one per line) and append.
+  if (!FLAGS_raw_prompts_file.empty()) {
+    auto file_prompts = ReadPromptsFromFile(FLAGS_raw_prompts_file);
+    prompts.insert(prompts.end(), file_prompts.begin(), file_prompts.end());
+  }
+
+  // Print prompts count
+  std::cout << "Prompts count: " << prompts.size() << std::endl;
+
   if (!gflags::GetCommandLineFlagInfoOrDie("prompt").is_default &&
       !gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default) {
     ET_CHECK_MSG(false, "Only provide prompt or tokenized_input but not both.");

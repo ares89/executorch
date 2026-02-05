@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from huggingface_hub import snapshot_download
-
+import os
 
 def download_and_convert_hf_checkpoint(
     repo_id: str, convert_weights: Callable[[str, str], None]
@@ -39,11 +39,12 @@ def download_and_convert_hf_checkpoint(
         print(f"✔ Using cached converted model: {str(converted_path)}")
         return str(converted_path)
 
-    # 1. Download weights from Hugging Face.
-    print("⬇ Downloading and converting checkpoint...")
-    checkpoint_path = snapshot_download(
-        repo_id=repo_id,
-    )
+    if os.path.isdir(repo_id):
+        print(f"✔ Using local HuggingFace-format checkpoint: {repo_id}")
+        checkpoint_path = repo_id
+    else:
+        print("⬇ Downloading and converting checkpoint from HuggingFace...")
+        checkpoint_path = snapshot_download(repo_id=repo_id)
 
     # 2. Convert weights to Meta format.
     convert_weights(checkpoint_path, str(converted_path))

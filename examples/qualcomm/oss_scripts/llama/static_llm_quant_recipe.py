@@ -604,6 +604,48 @@ class Qwen3_1_7BQuantRecipe(StaticLLMQuantRecipe):
         )
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
 
+class Qwen3_4BQuantRecipe(StaticLLMQuantRecipe):
+    """
+    Quantization recipe for Qwen3-4B.
+    Pattern follows other Qwen3 recipes: block quant for conv2d, 16a8w for sensitive proj layers,
+    and annotate KV for 8-bit IO where applicable.
+    """
+    default_quant_dtype = QuantDtype.use_16a4w_block
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w_block,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_BLOCK,
+                extra_kwargs={"block_size": (1, 16, 1, 1)},
+            )
+            .add_regex(
+                {
+                    r"layers\..*\.feed_forward\.w2_conv",
+                    r"output\.conv",
+                },
+                QuantDtype.use_16a8w,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
+        self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
 
 class Smollm2QuantRecipe(StaticLLMQuantRecipe):
     default_quant_dtype = QuantDtype.use_16a8w

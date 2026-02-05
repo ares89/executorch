@@ -75,6 +75,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     Qwen2_5_1_5BQuantRecipe,
     Qwen3_0_6BQuantRecipe,
     Qwen3_1_7BQuantRecipe,
+    Qwen3_4BQuantRecipe,  # added for Qwen3 4B
     Smollm2QuantRecipe,
     Smollm3QuantRecipe,
     SmolVLMQuantRecipe,
@@ -477,6 +478,24 @@ class Qwen3_1_7B(LLMModelConfig):
     r2 = False
     r3 = True
     quant_recipe = Qwen3_1_7BQuantRecipe
+
+@register_llm_model("qwen3-4b")
+@dataclass(init=False, frozen=True)
+class Qwen3_4B(LLMModelConfig):
+    repo_id: str = "Qwen/Qwen3-4B"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/qwen3/config/4b_config.json"
+    )
+    convert_weights = convert_qwen3_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = True
+    quant_recipe = Qwen3_4BQuantRecipe
 
 
 @register_llm_model("smollm2_135m")

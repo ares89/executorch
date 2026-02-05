@@ -116,9 +116,9 @@ class SimpleADB:
 
     def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
-            cmds = ["adb", "-s", self.device_id]
+            cmds = ["/mnt/d/Programs/android_sdk/platform-tools/adb.exe", "-s", self.device_id]
         else:
-            cmds = ["adb", "-H", self.host_id, "-s", self.device_id]
+            cmds = ["/mnt/d/Programs/android_sdk/platform-tools/adb.exe", "-H", self.host_id, "-s", self.device_id]
         cmds.extend(cmd)
 
         if output_callback:

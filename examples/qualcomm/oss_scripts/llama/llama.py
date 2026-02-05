@@ -315,6 +315,7 @@ def inference(
         runner_cmd = " ".join(
             [
                 f"cd {workspace} &&",
+                "chmod +x ./qnn_llama_runner &&",
                 f"./qnn_llama_runner",
                 f"--decoder_model_version {decoder_model_config.decoder_model_version}",
                 f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
